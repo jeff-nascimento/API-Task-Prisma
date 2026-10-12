@@ -1,0 +1,267 @@
+// Prisma Schema: a "planta" do banco de dados.
+// Daqui o Prisma gera (1) as migrations SQL e (2) o Prisma Client (código JS).
+
+//aqui diz que o prisma vai ser para js
+generator client {
+  provider = "prisma-client-js"
+}
+
+//aqui já diz para o prisma o formato de banco de dados, nesse caso postgresql
+datasource db {
+  provider = "postgresql"
+  // Em Prisma 7 a URL de conexão NÃO fica aqui: ela está em prisma.config.js
+}
+
+// ---------------------------------------------------------------------------
+// USUÁRIOS
+// ---------------------------------------------------------------------------
+
+//destrinchando o User:
+
+//id recebe o tipo String
+//@id: significa que vai ser chave primária quando é colocado assim
+//@default(uuid()): significa que se não for passado nenhum id ele vai usar uuid como padrão
+//@db.Uuid: especifica para o banco de dados que o id vai ser usado uuid
+
+//name recebe tipo string também
+//@db.Varchar(100): informando ao banco que vai ser varchar(100) até 100 caracteres
+
+//email tipo string
+//@unique: é para que o email seja único no banco, não tenha outro junto onDelete
+
+//passwordHash recebe tipo string
+//@map('password_hash'): aqui é informando para o banco que quando eu usar no prisma passwordHash eu me refiro
+//ao password_hash do banco
+
+//createdAt recebe o tipo DateTime que é a data e a hora
+//@default(now()) @map("created_at"): significa que o valor padrão será a data e a hora atual, já o @map
+//será igual ao de passwordHash
+
+//updatedAt é exatamante igual ao createdAt
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(100)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Lado "inverso" dos relacionamentos (não viram colunas em "users")
+
+  //aqui é a interação entre User e as outras Tabelas
+  //tasks Tasks[]: o que isso diz, diz que o usuário pode ter várias tarefas, colocar tasks [] é dizer que 
+  //tem uma lista de tarefas, isso se repete com todas as tabelas abaixo
+
+  //@@map('users'): porque dessa vez map veio diferente? porque antes mexia apenas no campo, agora é na 
+  //tabela inteira, então para isso precisa de mais um @
+
+  tasks         Task[]
+  refreshTokens RefreshToken[]
+  roles         UserRole[]
+  permissions   UserPermission[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// TAREFAS (1 usuário tem N tarefas)
+// ---------------------------------------------------------------------------
+
+//o raciocínio das colunas de task seguem o mesmo padrão das colunas de user, porém repare em description
+//ela recebe o tipo String? (isso significa que pode ter um valor ou pode não vir com valor nenhum, porque
+//description é opcional)
+
+//completed recebe o tipo booleano e começa com false, até que o usuário mude
+
+//userId recebe string também porém repare uma coisa agora
+//@map('user_id'): como uma tarefa pertence a um usuário, tarefa tem que receber a chave estrangeira para ele
+//por isso é colocado uma coluna para ele, @db.Uuid é para especificar que é uuid
+
+model Task {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String   @db.VarChar(150)
+  description String?
+  completed   Boolean  @default(false)
+  userId      String   @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  //destrinchando a relação com usuário
+  //user User: significa que a tarefa tem relação com um usuário apenas
+
+  //@relation: especifica o relacionamento
+
+  //fields: [userId]: vai ser o campo que vai ser usado para o relacionamento do usuário(chave estrangeira)
+
+  //references: [id]: isso vai ser para referenciar a qual coluna de usuários que estamos fazendo referencia
+  //para colocar como chave estrangeira, como padrão é o id, mas esse padrão depende de projeto para projeto
+
+  //onDelete: cascade serve para se caso um usuário for deletado, delete também as tarefas relacionadas a ele
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  //@@index([userId]): vai uma breve explicação com exemplo:
+  //index vai adiantar a procura, sem ter que passar por coluna por coluna, é como procurar a página do livro 
+  //que parou de ler, se for procurar por página por página, o index entra como um atalho para procurar, porém 
+  //toma mais recursos, isso pode deixar a requisição mais lenta, então é aconselhável usar ele apenas em 
+  //tabelas que vai usar muito, nesse caso user vai usar o tempo todo
+
+  //@@map('tasks'): segue o mesmo princípio de user
+  @@index([userId])
+  @@map("tasks")
+}
+
+// ---------------------------------------------------------------------------
+// ROLES e PERMISSIONS (RBAC)
+// ---------------------------------------------------------------------------
+
+//as colunas de role seguem o mesmo padrão de task e user, então não será explicada
+//só um adendo, como role significa papel/atribuição nome não pode ser duplicado, porque uma pessoa só pode
+//ter uma role cadastrada como Owner, não pode ter dois Owners, nem dois Admins
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(50)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  //aqui é um pouco diferente, como muitos usuários podem ter muitas permissões vira uma relação de N:N
+  //então quando temos relações assim precisamos de uma tabela intermediária para guardar a chave estrangeira
+  //das duas tabelas, por isso a relação em role com users recebe uma lista de UserRole, porque podem ter muitos
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+//assim como roles muitos usuários podem ter muitas permissões e muitas roles podem ter muitas permissões
+//por isso tem que fazer uma tabela para armazenar as chaves estrangeiras dessas tabelas N:N
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users UserPermission[]
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+// Tabelas de junção (N:N explícito). A chave primária é composta:
+// o mesmo par (usuário, role) não pode existir duas vezes.
+
+//vai receber os valores de id que são as primary key de user, role e permissions
+
+//obs: assignedAt: o que é isso? é para identificar quando o usuário recebeu esse papel, vai receber a data
+//e hora atual
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  //user recebe da tabela de usuários, porque não uma lista? porque é uma tabela intermediária, que vai 
+  //receber um id de usuário, ai vai armazenando, não vai receber vários ids de uma vez
+  //field: campo que vai receber o valor do id do usuário, vai ser userId
+  //references: qual campo de user que vai ser escolhido, nesse caso o id (primary key)
+  //ondelete cascade: para que delete todos os registros relacionados a esse usuário caso seja exluído
+
+  //essa linha de raciocínio segue em role também
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  //@@id([userId, roleId]): como tabela ela tem que ter um id e o id é nossa primary key, então o que isso faz:
+  //ele vai criar uma id com chave composta, os dois ids são uma chave primária, só colocando @@id já faz isso
+  //não preicsa especificar com mais um @id
+
+  //@@index vai ser para procurar mais rapidamente em roleId, como já foi explicado acima
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("users_roles")
+}
+
+//tabela de junção igual a de cima, os passos são exatamente iguais apenas mudando os dados recebidos
+
+model UserPermission {
+  userId       String   @map("user_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permissionId])
+  @@index([permissionId])
+  @@map("users_permissions")
+}
+
+//também igual a de cima
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("roles_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// REFRESH TOKENS (uma linha por refresh token emitido)
+// ---------------------------------------------------------------------------
+// id        -> vai dentro do JWT como "jti" (identificador único do token)
+// tokenHash -> SHA-256 do token (o token puro NUNCA é guardado)
+// familyId  -> todos os tokens de UMA sessão (login) compartilham o mesmo familyId
+// revokedAt -> preenchido quando o token foi usado (rotação), revogado (logout)
+//              ou invalidado por reuso. NULL = ainda utilizável.
+
+//essa tabela vai ser responsável por armazenar os refresh tokens emitidos, para que? para comparar em caso 
+//de algum ataque tentar enviar um refresh token que já foi cessado, entre outros ataques
+
+//ele recebe id do tipo uuid
+//o hash do token original, para manter a segurança do token
+//familyId: vou explicar a teoria de como funciona a rotação de refresh tokens e depois o que fica a familyId:
+
+//refresh token rotation basicamente vai funcionar assim: cada vez que o nosso access token expirar em vez de
+//criar apenas o access token ele vai criar também um refresh token e invalidar o antigo, mesmo que o refresh 
+//token tenha duração de 1 dia, por que isso? porque ele vai impedir um ataque caso o refresh token antigo seja
+//vazado, assim o atacante não terá como fazer nada pois já há outro refresh token para outro access token
+//ai que entra a família, vamos supor que faça login, então temos um refresh token de família A e um access 
+//também dessa família, porém o access expirou e precisamos fazer outra requisição, então é criado outro
+//refresh e outro access só que agora da família B, isso é familia, então essa coluna vai pegar o id de qual
+//família está esses tokens
+
+//expiresAt: quando esse token expirou
+//userId: é como se fosse assim: esse token pertence a qual usuário
+//revokedAt?: significa que pode ser null, ou seja, ainda não foi revogado, quando for coloca a data e hora dele
+//createdAt: normal
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @map("token_hash") @db.VarChar(64)
+  familyId  String    @map("family_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  //como precisa do usuário para saber de que usuário é esse token precisa de um relacionamento, pegando 
+  //o id desse usuário para chave estrangeira
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  //recebe @@index para buscar o usuário específico e também de familyId para buscar direcionadamente qual
+  //familia desse token
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
