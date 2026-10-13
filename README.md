@@ -32,3 +32,10 @@ npx prisma studio
 vai abrir uma aba no navegador que vai mostrar todas as tabelas
 
 Regras de ouro das migrations 1. Mudou o schema? Rode npx prisma migrate dev --name descricao_curta → nasce uma nova migration (nunca edite uma migration já aplicada). 2. Versione a pasta prisma/migrations/. 3. Em produção/CI use npx prisma migrate deploy (só aplica as pendentes, não cria nada novo). 4. npx prisma migrate reset apaga o banco e recria: só em desenvolvimento.
+
+foi usado esse comando no terminal para criar os tokens
+node
+require('crypto').randomBytes(64).toString('hex')
+
+node-> vai abrir o terminal de comando do node
+require('crypto').randomBytes(64).toString('hex') -> vai criar um hash
