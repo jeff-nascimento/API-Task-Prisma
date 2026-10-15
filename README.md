@@ -39,3 +39,17 @@ require('crypto').randomBytes(64).toString('hex')
 
 node-> vai abrir o terminal de comando do node
 require('crypto').randomBytes(64).toString('hex') -> vai criar um hash
+
+esse comenado vai ser responsável por rodar a seed: npx prisma db seed
+mas como ele sabe qual seed, como rodar, isso tudo é passado dentro de prisma.config.js
+lá tem isso:
+migrations: {
+path: "prisma/migrations",
+// Comando executado por "npx prisma db seed"
+seed: "node prisma/seed.js",
+},
+o que isso quer dizer, para criar as migrations vai rodar o path para migrations que é prisma/migrations e
+para seed vai rodar o caminho de node prisma/seed.js, mas porque node: é o comando que inicia o Node.js para
+executar um arquivo JavaScript.
+
+mas o fluxo é o seguinte, rbac passa os dados, seed-rbac faz o tratamento e seed envia para o banco
