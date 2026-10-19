@@ -53,3 +53,4 @@ para seed vai rodar o caminho de node prisma/seed.js, mas porque node: é o coma
 executar um arquivo JavaScript.
 
 mas o fluxo é o seguinte, rbac passa os dados, seed-rbac faz o tratamento e seed envia para o banco
+# API-Task-Prisma
