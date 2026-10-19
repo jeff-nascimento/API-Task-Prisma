@@ -1,9 +1,12 @@
 import bcrypt from "bcrypt";
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../utils/AppError.js";
 import { ROLES } from "../config/rbac.js";
+import { signAccessToken } from "./token.service.js";
+import { issueRefreshToken } from "./refresh-token.service.js";
 
 //aqui é aquela verificação de antes, para ver se o erro pertence a um erro conhecido do prisma, isprismaerror
 //pega err e code, erro é o erro que aconteceu e code é o código do erro no prisma, como o p2002, etc
@@ -105,4 +108,54 @@ export async function register({ name, email, password }) {
     //caso não for nenhum dos dois erros mostra qual erro é sem o tratamento do prisma
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// LOGIN
+// ---------------------------------------------------------------------------
+
+//como uma função de login comum ela vai receber email e senha para autenticação
+export async function login({ email, password }) {
+  //vai buscar nos usuários um registro onde o email seja igual o email passado, pega no banco de dados na
+  //tabela users com findUnique que pega um único registro
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  // Sempre executamos um bcrypt.compare (com hash falso se o usuário não existe).
+  //verifica se a senha digitada bate com a senha do usuário que stá salva no banco, compare aceita dois
+  //argumentos, o primeiro vai ser a senha literal e o segundo o hash salvo no banco, ele retorna true or false
+  //porque user aqui está assim? user?.passwordHash isso é como se falasse, pegue password somente se
+  //user for válido
+
+  //o ?? junto com password é um operador de coalecência nula, ou seja, se o da esquerda for null ou undefined
+  //ele vai executar o da direita, que e o DUMMY_HASH
+  //mas o que significa isso? ele vai ser um hash fictício, usado para reduzir a diferença de tempo entre um
+  //login incorreto de um login correto, para que o hacker não possa comparar os tempos até acertar
+  const passwordMatches = await bcrypt.compare(
+    password,
+    user?.passwordHash ?? DUMMY_HASH,
+  );
+
+  // Mesma mensagem para "e-mail não existe" e "senha errada" (anti-enumeração).
+  //porque validar a senha mesmo se o usuário for falso? porque se caso o usuário existisse ela tentaria fazer
+  //o hash da senha que costuma ser uma operação que leva certo tempo, então o atacante poderia tentar se
+  //aproveitar da diferença de tempo que ocorreria caso tentasse até acertar algum usuário
+  if (!user || !passwordMatches)
+    throw AppError.unauthorized("Credenciais inválidas");
+
+  // Cada LOGIN cria uma nova "família" de refresh tokens (uma sessão).
+  const familyId = randomUUID(); //cria um novo id com uuid
+  const accessToken = signAccessToken(user.id); //vai cadastrar um novo token de acesso, porque quando um
+  //usuário é cadastrado ele cria um novo refresh token e um access token, ele espera um userId, então
+  //deve pegar o id desse usuário que logou e passar para ele
+  const refreshToken = await issueRefreshToken({ userId: user.id, familyId }); //deve criar o refresh
+  //token como mencionado acima, ele já espera duas coisas, o familyId e o userId
+
+  //retorna os dados contendo, os dados de usuário (menos a senha)
+  //token de acesso para esse usuário
+  //refresh token para o usuário
+  return {
+    user: { id: user.id, name: user.name, email: user.email },
+    accessToken,
+    refreshToken,
+  };
 }
